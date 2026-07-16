@@ -111,13 +111,13 @@ foreach ($pair in $pairs) {
             continue
         }
 
-        # 대상 드라이브/공유 확인 (대상 폴더 자체는 robocopy 가 생성함)
+        # 대상 드라이브/공유 확인 - 실패해도 중단하지 않고 복사를 시도함
+        # (ECM/WebDAV 드라이브는 루트 확인이 안 되어도 실제 복사는 되는 경우가 있고,
+        #  실패하더라도 robocopy 가 더 정확한 오류를 로그에 남김)
         $dstRoot = $null
         try { $dstRoot = [System.IO.Path]::GetPathRoot($dst) } catch { }
         if ($dstRoot -and -not (Test-Path -LiteralPath $dstRoot -ErrorAction SilentlyContinue)) {
-            Write-Log "오류: 대상 드라이브에 접근할 수 없습니다: $dstRoot (네트워크 드라이브 연결 여부를 확인하세요)"
-            $hadError = $true
-            continue
+            Write-Log "주의: 대상 드라이브($dstRoot)가 이 세션에서 확인되지 않습니다. 그래도 복사를 시도합니다."
         }
 
         # robocopy 상세 로그는 쌍(pair)별 별도 파일에 기록 (인코딩/파일 잠금 충돌 방지)
