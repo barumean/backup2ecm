@@ -274,9 +274,12 @@ function Run-Engine {
         $pairArg = " -PairName '{0}'" -f ($script:pairs[$i].name -replace "'", "''")
     }
     $dryArg = if ($DryRun) { ' -DryRun' } else { '' }
+    $engine = $script:enginePath -replace "'", "''"
 
-    $cmd = "& '{0}' -Mode {1}{2}{3}; Write-Host ''; Read-Host '작업이 끝났습니다. Enter 키를 누르면 창이 닫힙니다'" -f `
-        ($script:enginePath -replace "'", "''"), $Mode, $pairArg, $dryArg
+    # 엔진에서 오류가 나도 창이 바로 닫히지 않고 오류 내용을 보여주도록 try/catch 로 감쌈
+    $cmd = "try { & '$engine' -Mode $Mode$pairArg$dryArg } " +
+           "catch { Write-Host ''; Write-Host ('오류가 발생했습니다: ' + `$_) -ForegroundColor Red }; " +
+           "Write-Host ''; Read-Host '작업이 끝났습니다. Enter 키를 누르면 창이 닫힙니다'"
 
     Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd)
 }

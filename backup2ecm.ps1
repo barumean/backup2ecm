@@ -92,58 +92,74 @@ $excludeDirs  = @($config.excludeDirs  | Where-Object { $_ })
 $hadError     = $false
 
 foreach ($pair in $pairs) {
-    if ($Mode -eq 'backup') {
-        $src = [string]$pair.source
-        $dst = [string]$pair.ecm
-    }
-    else {
-        $src = [string]$pair.ecm
-        $dst = [string]$pair.source
-    }
+    try {
+        if ($Mode -eq 'backup') {
+            $src = [string]$pair.source
+            $dst = [string]$pair.ecm
+        }
+        else {
+            $src = [string]$pair.ecm
+            $dst = [string]$pair.source
+        }
 
-    Write-Log "--- [$($pair.name)] $src  ==>  $dst"
+        Write-Log "--- [$($pair.name)] $src  ==>  $dst"
 
-    # 원본 확인
-    if (-not (Test-Path -LiteralPath $src)) {
-        Write-Log "오류: 원본 경로에 접근할 수 없습니다: $src (네트워크 드라이브 연결 여부를 확인하세요)"
+        # 원본 확인 (네트워크/ECM 드라이브 오류가 나도 예외 대신 false 처리)
+        if (-not (Test-Path -LiteralPath $src -ErrorAction SilentlyContinue)) {
+            Write-Log "오류: 원본 경로에 접근할 수 없습니다: $src (네트워크 드라이브 연결 여부를 확인하세요)"
+            $hadError = $true
+            continue
+        }
+
+        # 대상 드라이브/공유 확인 (대상 폴더 자체는 robocopy 가 생성함)
+        $dstRoot = $null
+        try { $dstRoot = [System.IO.Path]::GetPathRoot($dst) } catch { }
+        if ($dstRoot -and -not (Test-Path -LiteralPath $dstRoot -ErrorAction SilentlyContinue)) {
+            Write-Log "오류: 대상 드라이브에 접근할 수 없습니다: $dstRoot (네트워크 드라이브 연결 여부를 확인하세요)"
+            $hadError = $true
+            continue
+        }
+
+        # robocopy 상세 로그는 쌍(pair)별 별도 파일에 기록 (인코딩/파일 잠금 충돌 방지)
+        $safeName = ([string]$pair.name) -replace '[\\/:*?"<>|]', '_'
+        $rcLog    = Join-Path $logFolder ("{0}_{1}_{2}_robocopy.log" -f $Mode, $stamp, $safeName)
+
+        # robocopy 옵션 구성
+        #  /E   : 하위 폴더 포함(빈 폴더 포함)
+        #  /XO  : 대상이 더 최신이면 건너뜀 (새/변경 파일만 복사)
+        #  /FFT : FAT 시간 방식 비교(네트워크 드라이브 타임스탬프 오차 2초 허용)
+        #  /R /W: 실패 시 재시도 2회, 5초 간격
+        $rcArgs = @($src, $dst, '/E', '/FFT', '/R:2', '/W:5', '/NP', '/NDL', "/LOG:$rcLog", '/TEE')
+
+        if ($Mirror) { $rcArgs += '/MIR' } else { $rcArgs += '/XO' }
+        if ($DryRun) { $rcArgs += '/L' }
+
+        if ($excludeFiles.Count -gt 0) { $rcArgs += '/XF'; $rcArgs += $excludeFiles }
+        if ($excludeDirs.Count  -gt 0) { $rcArgs += '/XD'; $rcArgs += $excludeDirs }
+
+        $shownCmd = ($rcArgs | ForEach-Object { if ("$_" -match '\s') { '"{0}"' -f $_ } else { "$_" } }) -join ' '
+        Write-Log "robocopy 실행: robocopy $shownCmd"
+
+        # 출력을 숨기지 않음 -> 실행 창에서 진행 상황/오류를 바로 볼 수 있음
+        & robocopy @rcArgs
+        $rc = $LASTEXITCODE
+
+        # robocopy 종료 코드: 0~7 = 정상(복사됨/변경없음 등), 8 이상 = 오류
+        if ($rc -ge 8) {
+            Write-Log "결과: 오류 발생 (robocopy 코드 $rc) - 상세 로그: $rcLog"
+            $hadError = $true
+        }
+        elseif ($rc -eq 0) {
+            Write-Log "결과: 변경 사항 없음 (이미 최신 상태)"
+        }
+        else {
+            Write-Log "결과: 완료 (robocopy 코드 $rc - 파일 복사/갱신됨) - 상세 로그: $rcLog"
+        }
+    }
+    catch {
+        Write-Log ("예외 발생 [{0}]: {1}" -f $pair.name, $_.Exception.Message)
+        Write-Log ("위치: " + $_.InvocationInfo.PositionMessage)
         $hadError = $true
-        continue
-    }
-
-    # 대상 드라이브/공유 확인 (대상 폴더 자체는 robocopy 가 생성함)
-    $dstRoot = [System.IO.Path]::GetPathRoot($dst)
-    if ($dstRoot -and -not (Test-Path -LiteralPath $dstRoot)) {
-        Write-Log "오류: 대상 드라이브에 접근할 수 없습니다: $dstRoot (네트워크 드라이브 연결 여부를 확인하세요)"
-        $hadError = $true
-        continue
-    }
-
-    # robocopy 옵션 구성
-    #  /E   : 하위 폴더 포함(빈 폴더 포함)
-    #  /XO  : 대상이 더 최신이면 건너뜀 (새/변경 파일만 복사)
-    #  /FFT : FAT 시간 방식 비교(네트워크 드라이브 타임스탬프 오차 2초 허용)
-    #  /R /W: 실패 시 재시도 2회, 5초 간격
-    $rcArgs = @($src, $dst, '/E', '/FFT', '/R:2', '/W:5', '/NP', '/NDL', "/LOG+:$logFile", '/TEE')
-
-    if ($Mirror) { $rcArgs += '/MIR' } else { $rcArgs += '/XO' }
-    if ($DryRun) { $rcArgs += '/L' }
-
-    if ($excludeFiles.Count -gt 0) { $rcArgs += '/XF'; $rcArgs += $excludeFiles }
-    if ($excludeDirs.Count  -gt 0) { $rcArgs += '/XD'; $rcArgs += $excludeDirs }
-
-    & robocopy @rcArgs | Out-Null
-    $rc = $LASTEXITCODE
-
-    # robocopy 종료 코드: 0~7 = 정상(복사됨/변경없음 등), 8 이상 = 오류
-    if ($rc -ge 8) {
-        Write-Log "결과: 오류 발생 (robocopy 코드 $rc) - 자세한 내용은 로그를 확인하세요."
-        $hadError = $true
-    }
-    elseif ($rc -eq 0) {
-        Write-Log "결과: 변경 사항 없음 (이미 최신 상태)"
-    }
-    else {
-        Write-Log "결과: 완료 (robocopy 코드 $rc - 파일 복사/갱신됨)"
     }
 }
 
