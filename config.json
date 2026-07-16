@@ -1,0 +1,14 @@
+﻿{
+  "pairs": [
+    {
+      "name": "송교항_성과품",
+      "enabled": true,
+      "source": "D:\\작업\\(C515250)송교항\\성과품",
+      "ecm": "Y:\\전사 폴더\\Y. 수행 프로젝트\\12. 항만\\2025년\\(C515250)송교항 어촌신활력증진사업 기본계획 및 실시설계용역\\I. 성과품 관리\\01. 성과품 작업"
+    }
+  ],
+  "logFolder": "logs",
+  "logKeepDays": 30,
+  "excludeFiles": ["~$*", "*.tmp", "*.bak", "Thumbs.db", "desktop.ini", "*.crdownload", "*.partial"],
+  "excludeDirs": ["$RECYCLE.BIN", "System Volume Information"]
+}
