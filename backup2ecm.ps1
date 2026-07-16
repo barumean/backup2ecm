@@ -148,6 +148,14 @@ foreach ($pair in $pairs) {
         if ($rc -ge 8) {
             Write-Log "결과: 오류 발생 (robocopy 코드 $rc) - 상세 로그: $rcLog"
             $hadError = $true
+            # 액세스 거부(오류 5)면 ECM 보안 프로그램의 프로세스 차단일 가능성이 높음
+            try {
+                $tail = Get-Content -LiteralPath $rcLog -Encoding Default -ErrorAction SilentlyContinue | Select-Object -Last 40
+                if ($tail -match '오류 5|ERROR 5|액세스가 거부|Access is denied') {
+                    Write-Log "안내: '액세스 거부(오류 5)'는 ECM 보안 프로그램(사이버다임 등)이 허용된 프로그램 외의 드라이브 접근을 차단할 때 발생합니다."
+                    Write-Log "안내: ECM 관리자에게 robocopy.exe 와 powershell.exe 를 허용 프로그램으로 등록해 달라고 요청하세요."
+                }
+            } catch { }
         }
         elseif ($rc -eq 0) {
             Write-Log "결과: 변경 사항 없음 (이미 최신 상태)"
